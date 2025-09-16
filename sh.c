@@ -8,9 +8,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 
-/* MARK NAME Seu Nome Aqui */
-/* MARK NAME Nome de Outro Integrante Aqui */
-/* MARK NAME E Etc */
+/* MARK NAME Lorenzo Ventura Vagliano */
 
 /****************************************************************
  * Shell xv6 simplificado
@@ -107,7 +105,44 @@ runcmd(struct cmd *cmd)
     /* MARK START task4
      * TAREFA4: Implemente codigo abaixo para executar
      * comando com pipes. */
-    fprintf(stderr, "pipe nao implementado\n");
+    if (pipe(p) == -1) {
+      perror("Erro ao criar pipe");
+      exit(-1);
+    }
+    
+    r = fork1();
+    if (r == -1) {
+      perror("Erro de fork no pipe");
+      exit(-1);
+    } else if (r == 0) {
+      if (close(p[0]) == -1) {
+        perror("Erro ao fechar extremidade de leitura do pipe");
+        exit(-1);
+      }
+      if (dup2(p[1], STDOUT_FILENO) == -1) {
+        perror("Erro ao duplicar descritor de saída");
+        exit(-1);
+      }
+      if (close(p[1]) == -1) {
+        perror("Erro ao fechar descritor duplicado");
+        exit(-1);
+      }
+      runcmd(pcmd->left);
+    } else {
+      if (close(p[1]) == -1) {
+        perror("Erro ao fechar extremidade de escrita do pipe");
+        exit(-1);
+      }
+      if (dup2(p[0], STDIN_FILENO) == -1) {
+        perror("Erro ao duplicar descritor de entrada");
+        exit(-1);
+      }
+      if (close(p[0]) == -1) {
+        perror("Erro ao fechar descritor duplicado");
+        exit(-1);
+      }
+      runcmd(pcmd->right);
+    }
     /* MARK END task4 */
     break;
   }    
