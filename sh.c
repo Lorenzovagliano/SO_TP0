@@ -89,7 +89,15 @@ runcmd(struct cmd *cmd)
     /* MARK START task3
      * TAREFA3: Implemente codigo abaixo para executar
      * comando com redirecionamento. */
-    fprintf(stderr, "redir nao implementado\n");
+    if (close(rcmd->fd) == -1) {
+      perror("Erro ao fechar descritor de arquivo");
+      exit(-1);
+    }
+    
+    if (open(rcmd->file, rcmd->mode, 0644) == -1) {
+      perror("Erro ao abrir arquivo para redirecionamento");
+      exit(-1);
+    }
     /* MARK END task3 */
     runcmd(rcmd->cmd);
     break;
