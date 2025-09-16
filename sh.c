@@ -127,10 +127,17 @@ main(void)
     /* TAREFA1: O que faz o if abaixo e por que ele é necessário?
      * Insira sua resposta no código e modifique o fprintf abaixo
      * para reportar o erro corretamente. */
+    /*
+     * O código abaixo verifica se o comando digitado é "cd" (change directory).
+     * É necessário tratar o comando "cd" de forma especial porque ele deve alterar
+     * o diretório de trabalho do processo pai (o shell), não de um processo filho.
+     * Se fosse executado em um processo filho, a mudança de diretório não afetaria
+     * o shell principal, tornando o comando inútil.
+     */
     if(buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' '){
       buf[strlen(buf)-1] = 0;
       if(chdir(buf+3) < 0)
-        fprintf(stderr, "reporte erro\n");
+        fprintf(stderr, "cd: %s: Diretório não encontrado\n", buf+3);
       continue;
     }
     /* MARK END task1 */
