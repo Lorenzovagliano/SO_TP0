@@ -25,7 +25,9 @@
 struct cmd {
   int type; /* ' ' (exec)
                '|' (pipe)
-               '<' or '>' (redirection) */
+               '<' or '>' (redirection)
+               '&' (background)
+               '(' ')' (subshell via parseblock) */
 };
 
 struct execcmd {
@@ -47,8 +49,15 @@ struct pipecmd {
   struct cmd *right; // lado direito do pipe
 };
 
-int fork1(void);  // Fork mas fechar se ocorrer erro.
-struct cmd *parsecmd(char*); // Processar o linha de comando.
+struct backcmd {
+  int type;          // '&'
+  struct cmd *cmd;   // comando a rodar em background
+};
+
+int fork1(void);                 // Fork mas fechar se ocorrer erro.
+struct cmd *parsecmd(char*);     // Processar a linha de comando.
+struct cmd *parseblock(char **ps, char *es);
+struct cmd *backcmd(struct cmd *subcmd);
 
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
@@ -63,6 +72,7 @@ runcmd(struct cmd *cmd)
   struct execcmd *ecmd;
   struct pipecmd *pcmd;
   struct redircmd *rcmd;
+  struct backcmd *bcmd;
 
   if(cmd == 0)
     exit(0);
@@ -150,7 +160,19 @@ runcmd(struct cmd *cmd)
     }
     /* MARK END task4 */
     break;
-  }    
+
+  case '&':
+    bcmd = (struct backcmd*)cmd;
+    r = fork1();
+    if (r == -1) {
+      perror("Erro de fork no background");
+      exit(-1);
+    }
+    if (r == 0) {
+      runcmd(bcmd->cmd);
+    }
+    exit(0);
+  }
   exit(0);
 }
 
@@ -164,7 +186,8 @@ getcmd(char *buf, int nbuf)
   if (isatty(fileno(stdin)))
     fprintf(stdout, "$ ");
   memset(buf, 0, nbuf);
-  fgets(buf, nbuf, stdin);
+  if (!fgets(buf, nbuf, stdin))
+    return -1;
   if(buf[0] == 0) // EOF
     return -1;
   return 0;
@@ -197,8 +220,26 @@ main(void)
     }
     /* MARK END task1 */
 
+    {
+      char *p = buf;
+      while (*p == ' ' || *p == '\t') p++;
+      if (strncmp(p, "wait", 4) == 0 && (p[4] == '\n' || p[4] == ' ' || p[4] == '\0')) {
+        while (wait(&r) > 0) { /* reap todos os filhos */ }
+        continue;
+      }
+    }
+
+    struct cmd *c = parsecmd(buf);
+    if (c && c->type == '&') {
+      if (fork1() == 0) {
+        struct backcmd *bc = (struct backcmd*)c;
+        runcmd(bc->cmd);
+      }
+      continue;
+    }
+
     if(fork1() == 0)
-      runcmd(parsecmd(buf));
+      runcmd(c);
     wait(&r);
   }
   exit(0);
@@ -258,12 +299,24 @@ pipecmd(struct cmd *left, struct cmd *right)
   return (struct cmd*)cmd;
 }
 
+struct cmd*
+backcmd(struct cmd *subcmd)
+{
+  struct backcmd *cmd;
+
+  cmd = malloc(sizeof(*cmd));
+  memset(cmd, 0, sizeof(*cmd));
+  cmd->type = '&';
+  cmd->cmd = subcmd;
+  return (struct cmd*)cmd;
+}
+
 /****************************************************************
  * Processamento da linha de comando
  ***************************************************************/
 
 char whitespace[] = " \t\r\n\v";
-char symbols[] = "<|>";
+char symbols[] = "<|>&()";
 
 int
 gettoken(char **ps, char *es, char **q, char **eq)
@@ -282,6 +335,9 @@ gettoken(char **ps, char *es, char **q, char **eq)
     break;
   case '|':
   case '<':
+  case '&':
+  case '(':
+  case ')':
     s++;
     break;
   case '>':
@@ -317,6 +373,7 @@ peek(char **ps, char *es, char *toks)
 struct cmd *parseline(char**, char*);
 struct cmd *parsepipe(char**, char*);
 struct cmd *parseexec(char**, char*);
+struct cmd *parseredirs(struct cmd *cmd, char **ps, char *es);
 
 /* Copiar os caracteres no buffer de entrada, comeando de s ate es.
  * Colocar terminador zero no final para obter um string valido. */
@@ -352,6 +409,11 @@ parseline(char **ps, char *es)
 {
   struct cmd *cmd;
   cmd = parsepipe(ps, es);
+
+  while (peek(ps, es, "&")) {
+    gettoken(ps, es, 0, 0);
+    cmd = backcmd(cmd);
+  }
   return cmd;
 }
 
@@ -365,6 +427,26 @@ parsepipe(char **ps, char *es)
     gettoken(ps, es, 0, 0);
     cmd = pipecmd(cmd, parsepipe(ps, es));
   }
+  return cmd;
+}
+
+struct cmd*
+parseblock(char **ps, char *es)
+{
+  struct cmd *cmd;
+
+  if(!peek(ps, es, "(")) {
+    fprintf(stderr, "syntax - missing '('\n");
+    exit(-1);
+  }
+  gettoken(ps, es, 0, 0);
+  cmd = parseline(ps, es);
+  if(!peek(ps, es, ")")) {
+    fprintf(stderr, "syntax - missing ')'\n");
+    exit(-1);
+  }
+  gettoken(ps, es, 0, 0);
+  cmd = parseredirs(cmd, ps, es);
   return cmd;
 }
 
@@ -399,13 +481,16 @@ parseexec(char **ps, char *es)
   int tok, argc;
   struct execcmd *cmd;
   struct cmd *ret;
-  
+
+  if (peek(ps, es, "("))
+    return parseblock(ps, es);
+
   ret = execcmd();
   cmd = (struct execcmd*)ret;
 
   argc = 0;
   ret = parseredirs(ret, ps, es);
-  while(!peek(ps, es, "|")){
+  while(!peek(ps, es, "|)&")){
     if((tok=gettoken(ps, es, &q, &eq)) == 0)
       break;
     if(tok != 'a') {
