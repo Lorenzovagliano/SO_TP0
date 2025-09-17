@@ -16,11 +16,43 @@ desenvolvimento do trabalho.
 Lorenzo Ventura Vagliano vaglianolorenzo@gmail.com 100%
 
 3. Referências bibliográficas
+https://pdos.csail.mit.edu/6.828/2018/xv6/book-rev10.pdf
 
 Adicione aqui as referências bibliográficas.
 
 4. Estruturas de dados
 
-Descreva e justifique as estruturas de dados e algoritmos utilizados
-em sua solução.
+TAREFA 1 (builtin cd)
+- Estruturas: buffer de entrada buf (array de char) e a chamada de sistema chdir.
+- Algoritmo: detecção lexical do builtin por prefixo ("cd "), remoção do '\n' final, e chamada direta a chdir(buf+3). Trata erro com fprintf.
+- Justificativa: cd precisa alterar o diretório do processo do shell; por isso é tratado antes de fork/exec, pois se fosse executado num filho não afetaria o shell.
 
+TAREFA 2 (execução simples)
+- Estruturas: struct execcmd contendo argv[MAXARGS]; usa argv[0] e execvp.
+- Algoritmo: valida se há comando; chama execvp(argv[0], argv), que substitui a imagem do processo e resolve o executável via PATH. Em falha, imprime erro e encerra.
+- Justificativa: delega ao kernel/execvp a busca e carregamento do programa, preservando ambiente/heranças e mantendo o shell mínimo e correto.
+
+TAREFA 3 (redirecionamento < e >)
+- Estruturas: struct redircmd (campos cmd, file, mode, fd), descritores de arquivo.
+- Algoritmo: fecha o descritor alvo (close(fd)), abre file com mode adequado (O_RDONLY ou O_WRONLY|O_CREAT|O_TRUNC, permissão 0644). Pelo contrato POSIX, open retorna o menor descritor livre, que será justamente o fd fechado (0 para stdin ou 1 para stdout). Em seguida, executa runcmd(cmd) já com a E/S redirecionada.
+- Justificativa: técnica clássica, simples e segura para “trocar” stdin/stdout do subcomando sem mexer no código do comando.
+
+TAREFA 4 (pipes |)
+- Estruturas: struct pipecmd com left/right, par de descritores p[2] do pipe.
+- Algoritmo: cria pipe(p), faz fork. No filho: fecha p[0], duplica p[1] em STDOUT_FILENO com dup2, fecha restos e executa left. No pai: fecha p[1], duplica p[0] em STDIN_FILENO, fecha restos e executa right.
+- Justificativa: conecta stdout do comando da esquerda ao stdin do da direita via buffer de kernel; o desenho recursivo permite cadeias a|b|c naturalmente; fechar pontas não usadas evita deadlocks e vazamentos de descritores.
+
+EXTRA 1 SUBSHELLS ( ... )
+- Estruturas: reutiliza a hierarquia de struct cmd e introduz o parser de bloco parseblock; acrescenta os símbolos '(' e ')' aos tokens. Redireções continuam sendo expressas por struct redircmd e podem envolver o bloco inteiro.
+- Algoritmo: ao encontrar '(', o parser consome o token, chama recursivamente parseline para construir a árvore do comando interno, exige ')', e então aplica parseredirs ao resultado para permitir redireções como (cmd) > out. Na execução, runcmd recebe a árvore do bloco; como o shell já faz fork antes de runcmd, o subshell roda em um processo separado, com escopo próprio para FDs e redireções.
+- Justificativa: a abordagem recursiva espelha a gramática do shell e isola efeitos (como redireções) dentro do par de parênteses, permitindo aninhamento ((...)) e composição com pipes de forma natural e didática.
+
+EXTRA 2 BACKGROUND (&)
+- Estruturas: novo nó struct backcmd { int type='&'; struct cmd *cmd; }; token '&' adicionado; em parseline, '&' tem menor precedência e pode repetir (cmd1 & & é aninhado).
+- Algoritmo: o parser embrulha o comando anterior em backcmd quando encontra '&'. Na execução, o case '&' em runcmd faz um fork e o filho chama runcmd(bcmd->cmd); o processo do nó '&' sai imediatamente. Para que o builtin wait consiga coletar esses jobs, há um tratamento no main: se o comando de topo é '&', o shell (pai) faz fork e o filho executa diretamente o subcomando, tornando o job um filho direto do shell.
+- Justificativa: executar em background é, conceitualmente, “rodar sem bloquear o prompt”; o duplo tratamento (nível do nó e nível do topo) mantém a semântica não bloqueante e, ao mesmo tempo, garante que os processos em background sejam filhos do shell e possam ser coletados.
+
+EXTRA 3 WAIT (wait)
+- Estruturas: nenhuma estrutura nova; usa apenas o loop de espera com wait(&status) no processo do shell.
+- Algoritmo: antes de forkar/executar qualquer coisa, o shell checa se a linha é “wait”; se for, entra em um laço while (wait(&r) > 0) para reaproveitar todos os filhos já terminados (especialmente os lançados com ‘&’). Se não houver filhos pendentes, wait retorna -1 (ECHILD) e o laço encerra.
+- Justificativa: wait precisa agir no contexto do próprio shell para evitar zumbis e sincronizar com jobs em background; por isso é um builtin (não pode ser um exec externo) e roda sem criar processos adicionais.
