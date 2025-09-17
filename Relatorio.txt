@@ -9,16 +9,10 @@ material da Internet nem obtiveram código de terceiros.
 
 2. Membros do grupo e alocação de esforço
 
-Preencha as linhas abaixo com o nome e o e-mail dos integrantes do
-grupo.  Substitua XX pela contribuição de cada membro do grupo no
-desenvolvimento do trabalho.
-
 Lorenzo Ventura Vagliano vaglianolorenzo@gmail.com 100%
 
 3. Referências bibliográficas
 https://pdos.csail.mit.edu/6.828/2018/xv6/book-rev10.pdf
-
-Adicione aqui as referências bibliográficas.
 
 4. Estruturas de dados
 
