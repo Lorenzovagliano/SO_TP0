@@ -50,6 +50,11 @@ struct pipecmd {
 int fork1(void);  // Fork mas fechar se ocorrer erro.
 struct cmd *parsecmd(char*); // Processar o linha de comando.
 
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winfinite-recursion"
+#endif
+
 /* Executar comando cmd.  Nunca retorna. */
 void
 runcmd(struct cmd *cmd)
@@ -148,6 +153,10 @@ runcmd(struct cmd *cmd)
   }    
   exit(0);
 }
+
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 int
 getcmd(char *buf, int nbuf)
